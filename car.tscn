@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://cgtd3a2unlv1y"]
+
+[ext_resource type="Script" uid="uid://d1mtpbbl237tw" path="res://car.gd" id="1_7822p"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_6ld3k"]
+size = Vector2(36, 18)
+
+[node name="Car" type="CharacterBody2D" unique_id=410298528]
+collision_layer = 2
+script = ExtResource("1_7822p")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=2067711505]
+offset_left = -18.0
+offset_top = -9.0
+offset_right = 18.0
+offset_bottom = 9.0
+color = Color(0, 0, 1, 1)
+
+[node name="ColorRect2" type="ColorRect" parent="." unique_id=2094935086]
+offset_left = 12.0
+offset_top = -7.0
+offset_right = 18.0
+offset_bottom = 7.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1287986108]
+shape = SubResource("RectangleShape2D_6ld3k")
