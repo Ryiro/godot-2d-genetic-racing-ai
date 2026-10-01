@@ -105,7 +105,7 @@ func complete_lap() -> void:
 	if is_instance_valid(car):
 		car.current_speed = 0.0
 		car.velocity = Vector2.ZERO
-		car.modulate = Color(0.2, 1.0, 0.4, 0.85)
+		car.modulate = Color(0.2, 1.0, 0.4, 1.0)
 
 func disqualify() -> void:
 	is_disqualified = true

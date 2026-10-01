@@ -17,7 +17,8 @@ var track_forward_dir: Vector2 = Vector2.ZERO
 var total_segments: int = 0
 var spawn_pos: Vector2 = Vector2.ZERO
 var spawn_rot: float = 0.0
-
+var hud_panel: PanelContainer
+var hud_stats_label: Label
 # GA State
 var cars: Array[CharacterBody2D] = []
 var drivers: Array[DriverNeuralNet] = []
@@ -34,6 +35,15 @@ var hud_label: Label
 
 func _ready() -> void:
 	Engine.time_scale = 1.0
+	
+	# Add dark background canvas
+	var bg = ColorRect.new()
+	bg.position = Vector2(-1000, -800)
+	bg.size = Vector2(2000, 1600)
+	bg.color = Color(0.07, 0.08, 0.10, 1.0)
+	bg.z_index = -10
+	add_child(bg)
+
 	generate_custom_circuit()
 	build_track_visuals_and_colliders()
 	setup_hud()
@@ -96,9 +106,9 @@ func _get_local_closest_track_point(pos: Vector2, current_idx: int, window: int)
 func update_hud(finished_count: int, best_this_gen: float) -> void:
 	var time_left = max(0.0, max_lap_duration - gen_timer)
 	var best_str = ("%.2fs" % best_this_gen) if best_this_gen > 0.0 else "--"
-	var record_str = ("%.2fs" % all_time_best_time) if all_time_best_time > 0.0 else "--"
+	var record_str = ("%.2fs" % all_time_best_time) if all_time_best_time > 0.0 else "9.58s (Champion)"
 
-	hud_label.text = "GEN: %d | FINISHED: %d/%d | TIME LEFT: %.1fs\nBEST THIS GEN: %s | RECORD: %s\nSPEED: %.0fx ([Space] Toggle | [Esc] Quit)" % [
+	hud_stats_label.text = "Gen: %02d  |  Finished: %d/%d  |  Timer: %.1fs\nRound Best: %s  |  Record: %s\nSpeed: %.0fx  [Space] Cycle  [Esc] Quit" % [
 		generation, finished_count, population_size, time_left, best_str, record_str, sim_speed_presets[speed_idx]
 	]
 
@@ -142,7 +152,7 @@ func start_generation(brains: Array) -> void:
 
 		var driver = DriverNeuralNet.new(brain)
 		car.set_driver(driver)
-		car.modulate = Color.from_hsv(float(i) / float(population_size), 0.75, 0.95, 0.75)
+		car.modulate = Color.from_hsv(float(i) / float(population_size), 0.75, 1.0, 1.0)
 
 		add_child(car)
 		cars.append(car)
@@ -160,6 +170,19 @@ func _evolve_next_generation() -> void:
 	if drivers[0].has_finished:
 		if best_brain_ever == null or drivers[0].time_taken <= all_time_best_time:
 			best_brain_ever = drivers[0].brain.clone()
+			# Save champion JSON directly to user data
+			var save_data = {
+				"lap_time": drivers[0].time_taken,
+				"generation": generation,
+				"weights_ih": best_brain_ever.weights_ih,
+				"bias_h": best_brain_ever.bias_h,
+				"weights_ho": best_brain_ever.weights_ho,
+				"bias_o": best_brain_ever.bias_o
+			}
+			var file = FileAccess.open("user://champion_943.json", FileAccess.WRITE)
+			if file:
+				file.store_string(JSON.stringify(save_data, "\t"))
+				print("★ SAVED RECORD CHAMPION (%.2fs) to user://champion_943.json" % drivers[0].time_taken)
 
 	var next_brains: Array = []
 
@@ -265,22 +288,54 @@ func _chaikin_subdivide(pts: Array[Vector2]) -> Array[Vector2]:
 	return result
 
 func build_track_visuals_and_colliders() -> void:
-	_create_boundary("OuterWall", left_wall_points)
-	_create_boundary("InnerWall", right_wall_points)
+	# 1. Dark Asphalt Surface Fill (Renders below walls)
+	var asphalt = Line2D.new()
+	asphalt.points = center_points
+	asphalt.width = track_width
+	asphalt.default_color = Color(0.12, 0.13, 0.15, 1.0)
+	asphalt.joint_mode = Line2D.LINE_JOINT_ROUND
+	asphalt.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	asphalt.end_cap_mode = Line2D.LINE_CAP_ROUND
+	asphalt.z_index = -2
+	add_child(asphalt)
 
+	# 2. Subtle Dashed Racing Guideline (Track Center)
 	var center_line = Line2D.new()
 	center_line.points = center_points
 	center_line.width = 2.0
-	center_line.default_color = Color(1.0, 1.0, 1.0, 0.2)
+	center_line.default_color = Color(0.9, 0.9, 0.95, 0.18)
+	center_line.z_index = -1
 	add_child(center_line)
 
-	var gate = Line2D.new()
-	gate.points = PackedVector2Array([left_wall_points[0], right_wall_points[0]])
-	gate.width = 8.0
-	gate.default_color = Color(1.0, 0.2, 0.2, 0.95)
-	add_child(gate)
+	# 3. Outer Barriers (Solid border with subtle neon safety edge)
+	_create_boundary("OuterWall", left_wall_points, Color(0.2, 0.25, 0.3), Color(0.4, 0.7, 1.0, 0.8))
+	_create_boundary("InnerWall", right_wall_points, Color(0.2, 0.25, 0.3), Color(0.4, 0.7, 1.0, 0.8))
 
-func _create_boundary(body_name: String, points: PackedVector2Array) -> void:
+	# 4. Checkered Racing Finish Line Gate
+	var p_left = left_wall_points[0]
+	var p_right = right_wall_points[0]
+	
+	# Dark backing bar
+	var gate_backing = Line2D.new()
+	gate_backing.points = PackedVector2Array([p_left, p_right])
+	gate_backing.width = 14.0
+	gate_backing.default_color = Color(0.05, 0.05, 0.05, 0.9)
+	gate_backing.z_index = 0
+	add_child(gate_backing)
+
+	# Alternating checkered blocks across the track gate
+	var checker_steps = 10
+	for i in range(checker_steps):
+		var t0 = float(i) / float(checker_steps)
+		var t1 = float(i + 1) / float(checker_steps)
+		var strip = Line2D.new()
+		strip.points = PackedVector2Array([p_left.lerp(p_right, t0), p_left.lerp(p_right, t1)])
+		strip.width = 10.0
+		strip.default_color = Color.WHITE if (i % 2 == 0) else Color(0.85, 0.15, 0.15)
+		strip.z_index = 1
+		add_child(strip)
+
+func _create_boundary(body_name: String, points: PackedVector2Array, base_color: Color, glow_color: Color) -> void:
 	var static_body = StaticBody2D.new()
 	static_body.name = body_name
 	for i in range(points.size() - 1):
@@ -291,17 +346,57 @@ func _create_boundary(body_name: String, points: PackedVector2Array) -> void:
 		col.shape = segment
 		static_body.add_child(col)
 
-	var line = Line2D.new()
-	line.points = points
-	line.width = 5.0
-	line.default_color = Color.WHITE
+	# Heavy core barrier
+	var line_base = Line2D.new()
+	line_base.points = points
+	line_base.width = 6.0
+	line_base.default_color = base_color
+	line_base.joint_mode = Line2D.LINE_JOINT_ROUND
+
+	# Slim safety glow edge
+	var line_glow = Line2D.new()
+	line_glow.points = points
+	line_glow.width = 1.5
+	line_glow.default_color = glow_color
+
 	add_child(static_body)
-	add_child(line)
+	add_child(line_base)
+	add_child(line_glow)
 
 func setup_hud() -> void:
 	var canvas_layer = CanvasLayer.new()
-	hud_label = Label.new()
-	hud_label.position = Vector2(40, 30)
-	hud_label.add_theme_font_size_override("font_size", 20)
-	canvas_layer.add_child(hud_label)
+
+	hud_panel = PanelContainer.new()
+	hud_panel.position = Vector2(30, 25)
+
+	# Styled dark glassmorphic box
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.09, 0.12, 0.88)
+	style.border_width_left = 4
+	style.border_color = Color(0.2, 0.6, 1.0, 0.9) # Cyan accent bar
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_right = 6
+	style.corner_radius_bottom_left = 6
+	style.content_margin_left = 16.0
+	style.content_margin_top = 10.0
+	style.content_margin_right = 16.0
+	style.content_margin_bottom = 10.0
+	hud_panel.add_theme_stylebox_override("panel", style)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+
+	var title = Label.new()
+	title.text = "🏎️ GENETIC RACING AI"
+	title.add_theme_font_size_override("font_size", 13)
+	title.modulate = Color(0.4, 0.75, 1.0)
+	vbox.add_child(title)
+
+	hud_stats_label = Label.new()
+	hud_stats_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(hud_stats_label)
+
+	hud_panel.add_child(vbox)
+	canvas_layer.add_child(hud_panel)
 	add_child(canvas_layer)
